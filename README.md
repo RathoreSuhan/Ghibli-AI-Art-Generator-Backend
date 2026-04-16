@@ -159,20 +159,23 @@ Backend compile check:
 
 ## Project Screenshots
 
+The screenshots used below are stored in the backend static folder:
+`src/main/resources/static`
+
 ### Screenshot 1: Home Page
-![Screenshot 1 - Home Page](src/assets/S1.png)
+![Screenshot 1 - Home Page](src/main/resources/static/S1.png)
 
 ### Screenshot 2: Features Section
-![Screenshot 2 - Features Section](src/assets/S2.png)
+![Screenshot 2 - Features Section](src/main/resources/static/S2.png)
 
 ### Screenshot 3: Footer
-![Screenshot 3 - Footer](src/assets/S3.png)
+![Screenshot 3 - Footer](src/main/resources/static/S3.png)
 
 ### Screenshot 4: PhotoToArt Generation
-![Screenshot 4 - PhotoToArt Generation](src/assets/S4.png)
+![Screenshot 4 - PhotoToArt Generation](src/main/resources/static/S4.png)
 
 ### Screenshot 5: TextToArt Creation
-![Screenshot 5 - TextToArt Creation](src/assets/S5.png)
+![Screenshot 5 - TextToArt Creation](src/main/resources/static/S5.png)
 
 ## Why This Is a Strong Portfolio Project
 
