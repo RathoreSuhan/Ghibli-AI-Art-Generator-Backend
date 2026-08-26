@@ -29,6 +29,13 @@
 	<properties>
 		<java.version>21</java.version>
 		<spring-cloud.version>2025.0.0</spring-cloud.version>
+		<!--
+			Boot's dependency management does NOT cover jjwt, so every one of the three
+			artifacts below needs an explicit version. One property keeps them in lockstep:
+			mixing versions across jjwt-api / -impl / -jackson is a classpath split that
+			surfaces as a NoSuchMethodError at runtime, not as a build failure.
+		-->
+		<jjwt.version>0.13.0</jjwt.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -38,6 +45,64 @@
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-openfeign</artifactId>
+		</dependency>
+		<!--
+			spring-boot-starter-web does NOT bring hibernate-validator, so without this starter
+			every @Valid / @NotBlank annotation is silently ignored (no error, no warning).
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+		<!--
+			Brings spring-data-mongodb 4.5.1 and mongodb-driver-sync 5.5.1. No version:
+			the Boot 3.5.3 parent manages both.
+
+			Adding this alone does NOT break contextLoads() — the driver is lazy and does
+			no I/O at bean creation, so an unreachable Atlas fails on the first *query*
+			(~30s server-selection timeout), not at startup.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-mongodb</artifactId>
+		</dependency>
+		<!--
+			No version: the Boot 3.5.3 parent manages Spring Security 6.5.x.
+
+			Adding this starter is not additive — it switches on a default filter chain that
+			secures EVERY endpoint. /api/v1/generate would start returning 401 to the existing
+			frontend if SecurityConfig did not replace that default chain explicitly.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+		<!--
+			jjwt splits into an API jar and two implementation jars on purpose: only jjwt-api
+			appears on the compile classpath, so application code physically cannot reference
+			an internal class. The other two are discovered at runtime via ServiceLoader.
+
+			Scope matters. If jjwt-impl is missing at runtime, jjwt does NOT fail at startup —
+			the first Jwts.builder() call throws
+			"Unable to discover any JWT implementations... ensure you have included jjwt-impl".
+			jjwt-jackson supplies the JSON serialiser for the claims payload.
+		-->
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+			<version>${jjwt.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<version>${jjwt.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-jackson</artifactId>
+			<version>${jjwt.version}</version>
+			<scope>runtime</scope>
 		</dependency>
 
 		<dependency>
@@ -59,6 +124,40 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!--
+			Version managed by the Boot parent alongside the security starter. Supplies the
+			SecurityMockMvcRequestPostProcessors used to drive an authenticated MockMvc
+			request without minting a real token.
+		-->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!--
+			Embedded MongoDB for tests. Docker is not installed on this machine, so
+			Testcontainers is ruled out; this needs neither Docker nor a live Atlas.
+
+			The version is EXPLICIT on purpose: Boot 3.0 removed dependency management for
+			flapdoodle, so omitting it fails the build with "version is missing".
+
+			Coordinate matters — spring3x is the Boot 3.5 line. Do NOT swap in:
+			  spring30x  frozen at 4.22.0 (Boot 3.0)
+			  spring31x  abandoned Nov 2023
+			  spring4x   Boot 4.x (this is what the project's GitHub landing page shows)
+
+			This jar self-activates for EVERY @SpringBootTest via
+			META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports —
+			no annotation required — and hard-fails until
+			de.flapdoodle.mongodb.embedded.version is set. That property lives in
+			src/test/resources/application.properties.
+		-->
+		<dependency>
+			<groupId>de.flapdoodle.embed</groupId>
+			<artifactId>de.flapdoodle.embed.mongo.spring3x</artifactId>
+			<version>4.33.0</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

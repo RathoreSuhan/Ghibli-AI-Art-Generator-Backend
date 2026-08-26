@@ -4,7 +4,6 @@ import in.suhansingh.ghbliapi.dto.TextToImageRequest;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 
 @FeignClient(
@@ -27,20 +26,8 @@ public interface StabilityAIClient {
             @RequestBody TextToImageRequest requestBody
     );
 
-
-    @PostMapping(
-            value = "/v1/generation/{engine_id}/image-to-image",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
-            // Keep response format aligned with frontend blob handling.
-            headers = {"Accept=image/png"}
-    )
-    byte[] generateImageFromImage(
-            @RequestHeader("Authorization") String authorizationHeader,
-            @PathVariable("engine_id") String engineId,
-            @RequestPart("init_image") MultipartFile initImage,
-            @RequestPart("text_prompts[0][text]") String textPrompt,
-            // Stability expects style_preset (not style_present).
-            @RequestPart("style_preset") String stylePreset
-    );
+    // Note: image-to-image is not declared here. GhibliArtService posts that multipart body
+    // directly with an injected RestTemplate. The Feign variant that used to live here was
+    // never called by anything — removed rather than left as dead code.
 
 }

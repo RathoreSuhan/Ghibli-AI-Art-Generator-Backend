@@ -2,6 +2,7 @@ package in.suhansingh.ghbliapi.service;
 
 import in.suhansingh.ghbliapi.client.StabilityAIClient;
 import in.suhansingh.ghbliapi.dto.TextToImageRequest;
+import in.suhansingh.ghbliapi.exception.GenerationFailedException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -25,7 +26,12 @@ import java.io.IOException;
 @Service
 public class GhibliArtService {
 
+    /** Used when the request omits a style, so nothing here can NPE on a null style. */
+    private static final String DEFAULT_STYLE = "general";
+
     private final StabilityAIClient stabilityAIClient;
+    /** Injected, Spring-managed client with explicit timeouts — see StabilityHttpClientConfig. */
+    private final RestTemplate stabilityRestTemplate;
     private final String apiKey;
     // Using SDXL as the default because the old v1-6 engine id is no longer available.
     private final String textEngineId;
@@ -36,12 +42,14 @@ public class GhibliArtService {
 
     public GhibliArtService(
             StabilityAIClient stabilityAIClient,
+            RestTemplate stabilityRestTemplate,
             @Value("${stability.api.key}") String apiKey,
             @Value("${stability.api.text-engine:stable-diffusion-xl-1024-v1-0}") String textEngineId,
             @Value("${stability.api.image-engine:stable-diffusion-xl-1024-v1-0}") String imageEngineId,
             @Value("${stability.api.base-url}") String stabilityBaseUrl
     ) {
         this.stabilityAIClient = stabilityAIClient;
+        this.stabilityRestTemplate = stabilityRestTemplate;
         this.apiKey = apiKey;
         this.textEngineId = textEngineId;
         this.imageEngineId = imageEngineId;
@@ -85,7 +93,7 @@ public class GhibliArtService {
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(formData, headers);
             String endpoint = stabilityBaseUrl + "/v1/generation/" + imageEngineId + "/image-to-image";
 
-            ResponseEntity<byte[]> response = new RestTemplate().exchange(
+            ResponseEntity<byte[]> response = stabilityRestTemplate.exchange(
                     endpoint,
                     HttpMethod.POST,
                     requestEntity,
@@ -93,15 +101,20 @@ public class GhibliArtService {
             );
 
             return response.getBody();
+        } catch (IllegalArgumentException ex) {
+            // Client-side rejection (the 5MB guard above) — must stay a 400, not become an upstream failure.
+            throw ex;
         } catch (Exception ex) {
             // Added explicit runtime exception message so controller/frontend can show the real backend failure reason.
-            throw new RuntimeException("Photo to art generation failed: " + ex.getMessage(), ex);
+            throw new GenerationFailedException("Photo to art generation failed: " + ex.getMessage(), ex);
         }
     }
 
     public byte[] createGhibliArtFromText(String prompt, String style){
         String finalPrompt = prompt+ ", in the beautiful, detailed anime style of studio ghibli.";
-        String stylePreset = style.equals("general") ? "anime" : style.replace("_", "-");
+        // Guard the null/blank case: style.equals(..) used to NPE when the request omitted "style".
+        String requestedStyle = (style == null || style.isBlank()) ? DEFAULT_STYLE : style;
+        String stylePreset = DEFAULT_STYLE.equals(requestedStyle) ? "anime" : requestedStyle.replace("_", "-");
 
         TextToImageRequest requestPayLoad = new TextToImageRequest(finalPrompt, stylePreset);
 
