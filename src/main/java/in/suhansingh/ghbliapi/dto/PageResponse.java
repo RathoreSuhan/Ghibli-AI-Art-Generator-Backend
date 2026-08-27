@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.function.Function;
 
 /**
- * The pagination envelope. Phase 5 codes against exactly these nine fields.
+ * The pagination envelope. Phase 5 codes against exactly these eight fields.
  *
  * <p>Written by hand instead of returning Spring Data's {@link Page}, because serialising a
  * {@code PageImpl} straight out of a controller is not a stable contract. Spring Data 3.3+
@@ -20,6 +20,7 @@ import java.util.function.Function;
  * {@code number}, because {@code number} beside {@code numberOfElements} is a field pair nobody
  * can keep straight.
  *
+ * @param content          this page's items, already mapped to DTOs
  * @param page             zero-based index of this page, echoing the request
  * @param size             requested page size, not the number returned
  * @param totalElements    matching documents across all pages; requires a count query

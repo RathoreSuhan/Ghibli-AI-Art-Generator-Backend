@@ -37,6 +37,9 @@ class DeprecatedApiSweepTest {
             Path.of("src/main/java"),
             Path.of("src/test/java"));
 
+    /** Excluded from its own sweep — see {@link #sourceFiles()}. */
+    private static final Path OWN_FILE_NAME = Path.of("DeprecatedApiSweepTest.java");
+
     /**
      * Forbidden token to the reason it is forbidden. Order is only for readable output.
      *
