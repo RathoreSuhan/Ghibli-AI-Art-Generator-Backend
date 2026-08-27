@@ -6,6 +6,19 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 
+/**
+ * Feign client for Stability AI. Declares the <strong>text-to-image</strong> call only.
+ *
+ * <p>Image-to-image is deliberately absent. It is posted by {@code GhibliArtService} through an
+ * injected {@code RestTemplate}, because Feign cannot carry its {@code init_image} part: the
+ * resize step produces {@code byte[]}, which has to be wrapped as a Spring {@code Resource}, and
+ * feign-form drops {@code Resource} parts without raising anything. That is measured, not assumed
+ * — see {@code FeignMultipartEncodingTest}, which encodes the real request and asserts on the
+ * bytes. Text-to-image sends a JSON body, so it never touches that code path.
+ *
+ * <p>The Feign variant of image-to-image that used to live here was called by nothing; it was
+ * removed rather than left as dead code.
+ */
 @FeignClient(
         name = "stabilityAiClient",
         url = "${stability.api.base-url}",
@@ -25,9 +38,5 @@ public interface StabilityAIClient {
             @PathVariable("engine_id") String engineId,
             @RequestBody TextToImageRequest requestBody
     );
-
-    // Note: image-to-image is not declared here. GhibliArtService posts that multipart body
-    // directly with an injected RestTemplate. The Feign variant that used to live here was
-    // never called by anything — removed rather than left as dead code.
 
 }

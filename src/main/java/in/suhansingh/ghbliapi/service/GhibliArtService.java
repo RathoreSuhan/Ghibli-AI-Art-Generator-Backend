@@ -71,7 +71,15 @@ public class GhibliArtService {
             // This prevents "invalid_sdxl_v1_dimensions" 400 errors from Stability.
             byte[] resizedImageBytes = resizeImageToStabilityDimensions(image.getBytes());
 
-            // Switched PhotoToArt to direct multipart HTTP call because multipart Feign encoding was causing generation failures.
+            // Direct multipart call rather than Feign, because Feign silently drops this part.
+            // Measured in FeignMultipartEncodingTest: feign-form (a non-optional dependency of
+            // spring-cloud-starter-openfeign) routes a Resource-typed @RequestPart to its
+            // catch-all PojoWriter, which reflects over declared fields and skips final ones.
+            // ByteArrayResource has exactly one field, `private final byte[] byteArray`, so the
+            // part is written as nothing at all — no exception, no log. The other two parts
+            // encode fine, so Stability answers with a 400 naming init_image, which reads like a
+            // caller bug. RestTemplate encodes all three correctly; see that test for why an
+            // adapter to make Feign work was not the trade taken.
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(apiKey);
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
