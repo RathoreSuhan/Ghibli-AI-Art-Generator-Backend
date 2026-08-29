@@ -105,6 +105,21 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!--
+			Supplies /actuator/health, which is what Render polls to decide a deploy is live and
+			what an uptime pinger hits to stop a free instance spinning down. No version: managed
+			by the Boot parent.
+
+			Adding it is not purely additive — it publishes an HTTP surface. Two lines keep that
+			narrow: management.endpoints.web.exposure.include=health in application.properties, and
+			the single permitAll for /actuator/health in SecurityConfig. Everything else stays
+			behind anyRequest().authenticated().
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-devtools</artifactId>

@@ -1,0 +1,27 @@
+# Keeps the Docker build context small and the image reproducible. Everything here would
+# either be rebuilt inside the container anyway or has no business in it.
+
+# Local build output. Copying it in would ship a jar compiled on a Windows JDK and, worse,
+# let a stale target/ shadow the one Maven builds in the image.
+target/
+
+# IDE and editor state.
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# The Maven wrapper is unused in the image — the build stage runs Maven from the base image.
+.mvn/
+mvnw
+mvnw.cmd
+
+# Docs, and this file itself: no effect on the build, but each one invalidates the context
+# layer when it changes.
+HELP.md
+README.md
+Dockerfile
+.dockerignore
+.gitignore
+.gitattributes
