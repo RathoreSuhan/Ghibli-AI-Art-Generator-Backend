@@ -1,8 +1,11 @@
 package in.suhansingh.ghbliapi.service;
 
+import feign.FeignException;
 import in.suhansingh.ghbliapi.client.StabilityAIClient;
 import in.suhansingh.ghbliapi.dto.TextToImageRequest;
 import in.suhansingh.ghbliapi.exception.GenerationFailedException;
+import in.suhansingh.ghbliapi.exception.StabilityApiException; // Upstream failures keep their cause
+import in.suhansingh.ghbliapi.exception.StabilityErrorTranslator; // …decided in one shared place
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -13,6 +16,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpStatusCodeException; // Stability answered 4xx/5xx
+import org.springframework.web.client.ResourceAccessException; // Stability never answered
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -112,8 +117,21 @@ public class GhibliArtService {
         } catch (IllegalArgumentException ex) {
             // Client-side rejection (the 5MB guard above) — must stay a 400, not become an upstream failure.
             throw ex;
+        } catch (HttpStatusCodeException ex) {
+            // Stability answered, but with 4xx/5xx. Classify it here so a spent balance or a
+            // filtered prompt keeps its identity instead of collapsing into a generic 502 below.
+            throw StabilityErrorTranslator.translate(
+                    ex.getStatusCode().value(),
+                    ex.getResponseBodyAsString(),
+                    // Headers can be absent on a synthetic error, so never dereference blindly.
+                    ex.getResponseHeaders() != null ? ex.getResponseHeaders().getFirst("Retry-After") : null,
+                    ex);
+        } catch (ResourceAccessException ex) {
+            // Nothing came back at all — DNS, refused connection or the 60s read timeout.
+            throw StabilityErrorTranslator.translate(ex);
         } catch (Exception ex) {
-            // Added explicit runtime exception message so controller/frontend can show the real backend failure reason.
+            // Still the fallback for our own failures (unreadable upload, resize error): those are
+            // genuinely "generation failed" rather than anything Stability did.
             throw new GenerationFailedException("Photo to art generation failed: " + ex.getMessage(), ex);
         }
     }
@@ -126,11 +144,28 @@ public class GhibliArtService {
 
         TextToImageRequest requestPayLoad = new TextToImageRequest(finalPrompt, stylePreset);
 
-        return stabilityAIClient.generateImageFromText(
-                "Bearer " + apiKey,
-                textEngineId,
-                requestPayLoad
-        );
+        // Wrapped as of the Stability-error work: this call used to be bare, so every upstream
+        // condition reached the advice as a plain FeignException and became one 502.
+        try {
+            return stabilityAIClient.generateImageFromText(
+                    "Bearer " + apiKey,
+                    textEngineId,
+                    requestPayLoad
+            );
+        } catch (StabilityApiException ex) {
+            // StabilityErrorDecoder already classified it from the response body — pass it through
+            // untouched rather than re-wrapping and losing the code.
+            throw ex;
+        } catch (FeignException ex) {
+            // Reached only when the decoder never ran. status() == 0 is Feign's marker for "no
+            // response" (RetryableException around a connect failure or read timeout).
+            throw ex.status() > 0
+                    ? StabilityErrorTranslator.translate(ex.status(), ex.contentUTF8(), null, ex)
+                    : StabilityErrorTranslator.translate(ex);
+        } catch (RuntimeException ex) {
+            // Encoding or serialisation problems on our side, mirroring the photo path's fallback.
+            throw new GenerationFailedException("Text to art generation failed: " + ex.getMessage(), ex);
+        }
     }
 
     /**

@@ -3,6 +3,8 @@ package in.suhansingh.ghbliapi.controller;
 import in.suhansingh.ghbliapi.config.SecurityConfig;
 import in.suhansingh.ghbliapi.dto.TextGenerationRequestDTO;
 import in.suhansingh.ghbliapi.exception.GenerationFailedException;
+import in.suhansingh.ghbliapi.exception.StabilityApiException; // Upstream failures, per-cause
+import in.suhansingh.ghbliapi.enums.StabilityFailure;
 import in.suhansingh.ghbliapi.security.JwtService;
 import in.suhansingh.ghbliapi.service.GenerationHistoryService;
 import in.suhansingh.ghbliapi.service.GhibliArtService;
@@ -26,6 +28,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -191,6 +194,81 @@ class GenerationControllerValidationTest {
                 .andExpect(status().isBadGateway())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("Photo to art generation failed: nope"));
+    }
+
+    // --- upstream failures keep their own identity --------------------------
+    // Every case below used to be a 502 titled "Generation failed" with the same sentence, so the
+    // UI could not tell an empty balance from an outage. `code` is what it now switches on;
+    // `retryable` is what gates the "Try again" button.
+
+    /**
+     * An exhausted Stability balance. 402 rather than 502, and explicitly NOT retryable — the whole
+     * point of this test is that the frontend must not offer to retry something that cannot succeed.
+     */
+    @Test
+    void exhaustedCreditsAreReportedAsPaymentRequiredWithACode() throws Exception {
+        when(ghibliArtService.createGhibliArtFromText(anyString(), anyString()))
+                .thenThrow(new StabilityApiException(StabilityFailure.CREDITS_EXHAUSTED, 402, null));
+
+        mockMvc.perform(post("/api/v1/generate-from-text")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"a quiet hillside\",\"style\":\"general\"}"))
+                .andExpect(status().isPaymentRequired())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Out of generation credits"))
+                .andExpect(jsonPath("$.code").value("stability_credits_exhausted"))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.upstreamStatus").value(402))
+                .andExpect(jsonPath("$.instance").value("/api/v1/generate-from-text"));
+    }
+
+    /** A rate limit is the one case that carries a wait, so it must reach the client as a header too. */
+    @Test
+    void rateLimitIsRetryableAndCarriesRetryAfter() throws Exception {
+        when(ghibliArtService.createGhibliArtFromText(anyString(), anyString()))
+                .thenThrow(new StabilityApiException(StabilityFailure.RATE_LIMITED, 429, 12));
+
+        mockMvc.perform(post("/api/v1/generate-from-text")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"a quiet hillside\",\"style\":\"general\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("stability_rate_limited"))
+                .andExpect(jsonPath("$.retryable").value(true))
+                .andExpect(jsonPath("$.retryAfterSeconds").value(12))
+                .andExpect(header().string("Retry-After", "12"));
+    }
+
+    /** The photo path reaches the same handler — one contract for both endpoints, as above. */
+    @Test
+    void stabilityOutageOnThePhotoPathIsA503() throws Exception {
+        when(ghibliArtService.createGhibliArt(any(), anyString()))
+                .thenThrow(new StabilityApiException(StabilityFailure.UNAVAILABLE, 503, null));
+
+        mockMvc.perform(multipart("/api/v1/generate")
+                        .file(new MockMultipartFile("image", "cat.png", MediaType.IMAGE_PNG_VALUE, FAKE_PNG))
+                        .param("prompt", "make it dreamy"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("stability_unavailable"))
+                .andExpect(jsonPath("$.retryable").value(true))
+                // No Retry-After was sent upstream, so none is invented — the UI shows a plain
+                // "Try again" instead of a countdown to a number nobody supplied.
+                .andExpect(jsonPath("$.retryAfterSeconds").doesNotExist())
+                .andExpect(header().doesNotExist("Retry-After"));
+    }
+
+    /** A refused prompt is the user's to fix, so it is a 4xx and offers no retry. */
+    @Test
+    void moderationRefusalIsAnUnprocessableEntity() throws Exception {
+        when(ghibliArtService.createGhibliArtFromText(anyString(), anyString()))
+                .thenThrow(new StabilityApiException(StabilityFailure.REQUEST_REJECTED, 403, null));
+
+        mockMvc.perform(post("/api/v1/generate-from-text")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"something the filter dislikes\",\"style\":\"general\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("stability_request_rejected"))
+                .andExpect(jsonPath("$.retryable").value(false));
     }
 
     @Test

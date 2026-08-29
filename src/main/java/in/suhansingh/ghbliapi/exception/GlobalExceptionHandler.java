@@ -1,6 +1,7 @@
 package in.suhansingh.ghbliapi.exception;
 
 import feign.FeignException;
+import in.suhansingh.ghbliapi.enums.StabilityFailure;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -91,7 +92,76 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.BAD_GATEWAY, "Generation failed", ex.getMessage(), request);
     }
 
-    /** The text-to-art path goes through Feign, which signals upstream errors this way. */
+    /**
+     * A failure that came from Stability AI, already classified at the network seam by
+     * {@link StabilityErrorTranslator}.
+     *
+     * <p>Declared <em>before</em> {@link #handleFeignException} for readability only — Spring
+     * resolves by the most specific exception type, and {@link StabilityApiException} is not a
+     * {@code FeignException}, so the two never compete.
+     *
+     * <p>Three properties beyond the standard ProblemDetail fields, and each one exists because the
+     * frontend cannot work it out for itself:
+     *
+     * <ul>
+     *   <li>{@code code} — a stable identifier such as {@code stability_credits_exhausted}. Status
+     *       alone is not enough (402 and 429 are distinct, but 502 covers two different causes) and
+     *       matching on {@code detail} text would break the moment the wording changes.</li>
+     *   <li>{@code retryable} — whether pressing the button again could work. This is the one thing
+     *       the UI must not guess: offering "Try again" for an empty balance is a lie.</li>
+     *   <li>{@code upstreamStatus} / {@code retryAfterSeconds} — diagnostics and the countdown.</li>
+     * </ul>
+     *
+     * <p>Returns {@code ResponseEntity} rather than a bare {@code ProblemDetail} purely so a real
+     * {@code Retry-After} header can travel with the 429/503, per RFC 9110 §10.2.3.
+     */
+    @ExceptionHandler(StabilityApiException.class)
+    public ResponseEntity<ProblemDetail> handleStabilityApiException(
+            StabilityApiException ex, HttpServletRequest request) {
+
+        StabilityFailure failure = ex.getFailure();
+
+        // Retryable cases are noise (upstream hiccups); the rest need an operator's attention —
+        // an empty balance or a rejected key will not fix itself.
+        if (failure.isRetryable()) {
+            log.warn(
+                    "Stability call for {} failed: {} (upstream status {})",
+                    request.getRequestURI(),
+                    failure,
+                    ex.getUpstreamStatus());
+        } else {
+            log.error(
+                    "Stability call for {} failed: {} (upstream status {})",
+                    request.getRequestURI(),
+                    failure,
+                    ex.getUpstreamStatus(),
+                    ex);
+        }
+
+        ProblemDetail problemDetail = problem(failure.getStatus(), failure.getTitle(), ex.getMessage(), request);
+        problemDetail.setProperty("code", failure.getCode());
+        problemDetail.setProperty("retryable", failure.isRetryable());
+
+        if (ex.getUpstreamStatus() != null) {
+            problemDetail.setProperty("upstreamStatus", ex.getUpstreamStatus());
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        if (ex.getRetryAfterSeconds() != null) {
+            problemDetail.setProperty("retryAfterSeconds", ex.getRetryAfterSeconds());
+            headers.set(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()));
+        }
+
+        return new ResponseEntity<>(problemDetail, headers, failure.getStatus());
+    }
+
+    /**
+     * The text-to-art path goes through Feign, which signals upstream errors this way.
+     *
+     * <p>Kept as a safety net rather than deleted: {@code StabilityErrorDecoder} now converts every
+     * response from the Stability client into a {@link StabilityApiException} above, so this only
+     * fires for a Feign client added later without its own decoder.
+     */
     @ExceptionHandler(FeignException.class)
     public ProblemDetail handleFeignException(FeignException ex, HttpServletRequest request) {
         log.error("Stability call failed with status {}", ex.status(), ex);
