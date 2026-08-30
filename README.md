@@ -700,36 +700,36 @@ server-side, so what the user typed is what gets stored in `generations.prompt`.
 
 ![Text to Art](src/main/resources/static/S5.png)
 
-### S6 — Where the style vocabulary comes from
-
-The film names the interface leans on here are the same vocabulary the `style` field carries. `general`
-maps to Stability's `anime` preset; every other value has `_` swapped for `-`, so `analog_film` goes out
-as `analog-film`. This section itself is static content — it makes no API call.
-
-![Whispers of the Wind](src/main/resources/static/S6.png)
-
-### S7 — `GET /generations?page=0&size=4`, behind the Create form
+### S6 — `GET /generations?page=0&size=4`, behind the Create form
 
 The recent strip is the history endpoint with a small page size. "View all 7 →" is `totalElements` from
 the `PageResponse` envelope, not a count the client kept. Each thumbnail is a separate
 `GET /generations/{id}/image`.
 
-![Recent creations](src/main/resources/static/S7.png)
+![Recent creations](src/main/resources/static/S6.png)
 
-### S8 — What the two collections actually hold
+### S7 — Where the style vocabulary comes from
+
+The film names the interface leans on here are the same vocabulary the `style` field carries. `general`
+maps to Stability's `anime` preset; every other value has `_` swapped for `-`, so `analog_film` goes out
+as `analog-film`. This section itself is static content — it makes no API call.
+
+![Whispers of the Wind](src/main/resources/static/S7.png)
+
+### S8 — The contract, in the words a user reads
+
+Static content, no API call. Worth including because the retention and ownership claims on this page are
+the ones `findByIdAndUserId` and `deleteByIdAndUserId` have to keep.
+
+![Legal](src/main/resources/static/S8.png)
+
+### S9 — What the two collections actually hold
 
 The stored/never-stored split on this page is the data model, in prose: `generations` keeps the prompt,
 the style, the engine id and the PNG dimensions; `generation_images` keeps the bytes; `users` keeps a
 BCrypt hash that no endpoint can return.
 
-![Privacy — stored vs never stored](src/main/resources/static/S8.png)
-
-### S9 — The contract, in the words a user reads
-
-Static content, no API call. Worth including because the retention and ownership claims on this page are
-the ones `findByIdAndUserId` and `deleteByIdAndUserId` have to keep.
-
-![Legal](src/main/resources/static/S9.png)
+![Privacy — stored vs never stored](src/main/resources/static/S9.png)
 
 ### S10 — `GET /generations?page=0&size=12` → `PageResponse`
 
@@ -763,21 +763,21 @@ A wrong password and an unknown address return the identical detail. That is `Au
 
 ![Log in](src/main/resources/static/S13.png)
 
-### S14 — The same metadata line the API produces, over a curated image
+### S14 — Three curated rows, in the generator's own vocabulary
+
+Static images, no API call. Included because it is what the `style` presets are aiming at, and because
+every tile carries a `type` and a `style` drawn from the values `generations` actually stores.
+
+![Gallery](src/main/resources/static/S14.png)
+
+### S15 — The same metadata line the API produces, over a curated image
 
 These gallery tiles are static assets, so no request is made — but the caption under them is built by
 the *same* `typeLabel` / `styleLabel` helpers a real history card uses, from the same stored values
 (`TEXT_TO_IMAGE`, `digital_art`). One vocabulary across the app, which is why "Text to Art · Princess
 Mononoke" here reads identically to a row that came out of `GenerationSummaryResponse`.
 
-![Lightbox](src/main/resources/static/S14.png)
-
-### S15 — Three curated rows, in the generator's own vocabulary
-
-Static images again, no API call. Included because it is what the `style` presets are aiming at, and
-because every tile carries a `type` and a `style` drawn from the values `generations` actually stores.
-
-![Gallery](src/main/resources/static/S15.png)
+![Lightbox](src/main/resources/static/S15.png)
 
 ## Project layout
 
